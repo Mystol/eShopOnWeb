@@ -139,8 +139,6 @@ deploy-staging:
         export IMAGE_NAME=$IMAGE_NAME &&
         export IMAGE_TAG=$CI_COMMIT_SHA &&
         export SA_PASSWORD=$SA_PASSWORD_STG &&
-        export CATALOG_CONNECTION=$CATALOG_CONNECTION_STG &&
-        export IDENTITY_CONNECTION=$IDENTITY_CONNECTION_STG &&
         docker-compose -f docker-compose.staging.yml pull &&
         docker-compose -f docker-compose.staging.yml up -d
       "
@@ -175,8 +173,6 @@ deploy-production:
         export IMAGE_NAME=$IMAGE_NAME &&
         export IMAGE_TAG=$CI_COMMIT_SHA &&
         export SA_PASSWORD=$SA_PASSWORD_PRD &&
-        export CATALOG_CONNECTION=$CATALOG_CONNECTION_PRD &&
-        export IDENTITY_CONNECTION=$IDENTITY_CONNECTION_PRD &&
         docker-compose -f docker-compose.production.yml pull &&
         docker-compose -f docker-compose.production.yml up -d
       "
