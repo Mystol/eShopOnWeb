@@ -1,0 +1,8 @@
+# Ignore false positives in test/dev files
+# Ces chemins contiennent des valeurs de test ou de placeholder
+src/Web/appsettings.Development.json
+tests/
+node_modules/
+.git/
+src/**/bin/
+src/**/obj/

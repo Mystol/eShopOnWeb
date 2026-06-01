@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  eshopwebmvc:
+    image: ${IMAGE_NAME}:${IMAGE_TAG:-latest}
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Docker
+      - ASPNETCORE_URLS=http://+:8080
+      - ConnectionStrings__CatalogConnection=${CATALOG_CONNECTION}
+      - ConnectionStrings__IdentityConnection=${IDENTITY_CONNECTION}
+    ports:
+      - "5106:8080"
+    depends_on:
+      sqlserver-stg:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - securefintech-stg
+
+  sqlserver-stg:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      - SA_PASSWORD=${SA_PASSWORD}
+      - ACCEPT_EULA=Y
+    volumes:
+      - sqldata_staging:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"${SA_PASSWORD}\" -Q 'SELECT 1' -No || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    restart: unless-stopped
+    networks:
+      - securefintech-stg
+
+volumes:
+  sqldata_staging:
+
+networks:
+  securefintech-stg:
+    driver: bridge
