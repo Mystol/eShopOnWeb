@@ -6,8 +6,8 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Docker
       - ASPNETCORE_URLS=http://+:8080
-      - ConnectionStrings__CatalogConnection=${CATALOG_CONNECTION}
-      - ConnectionStrings__IdentityConnection=${IDENTITY_CONNECTION}
+      - ConnectionStrings__CatalogConnection=Server=sqlserver-prd,1433;uid=sa;Password=${SA_PASSWORD};Database=Microsoft.eShopOnWeb.CatalogDb;TrustServerCertificate=true;
+      - ConnectionStrings__IdentityConnection=Server=sqlserver-prd,1433;uid=sa;Password=${SA_PASSWORD};Database=Microsoft.eShopOnWeb.Identity;TrustServerCertificate=true;
     ports:
       - "5107:8080"
     depends_on:
