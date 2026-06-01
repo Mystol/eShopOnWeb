@@ -40,14 +40,13 @@ test:
   script:
     - dotnet restore $SOLUTION_FILE
     - dotnet test $SOLUTION_FILE -c Release --no-restore
-        --logger "junit;LogFilePath=../../test-results/results.xml"
-        --collect:"XPlat Code Coverage"
+        --logger "trx;LogFileName=results.trx"
+        --results-directory ./test-results
   artifacts:
-    reports:
-      junit: "test-results/results.xml"
     paths:
       - "test-results/"
     expire_in: 1 week
+    when: always
   rules:
     - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "develop"
 
