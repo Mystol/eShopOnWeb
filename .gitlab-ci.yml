@@ -24,9 +24,10 @@ build:
   script:
     - dotnet restore $SOLUTION_FILE
     - dotnet build $SOLUTION_FILE -c Release --no-restore
+    - dotnet publish src/Web/Web.csproj -c Release --no-build -o ci-publish/
   artifacts:
     paths:
-      - src/Web/bin/Release/
+      - ci-publish/
     expire_in: 1 hour
   rules:
     - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "develop"
@@ -102,8 +103,9 @@ docker-build:
   before_script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
   script:
+    # Dockerfile.ci copie les binaires déjà compilés — pas de dotnet restore dans Docker
     - docker build
-        -f src/Web/Dockerfile
+        -f Dockerfile.ci
         -t $IMAGE_NAME:$CI_COMMIT_SHA
         -t $IMAGE_NAME:latest
         .

@@ -1,0 +1,9 @@
+# Dockerfile utilisé par la CI GitLab
+# Les binaires sont déjà compilés par le stage "build" du pipeline
+# Ce Dockerfile copie simplement le publish dans l'image runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0
+WORKDIR /app
+COPY ci-publish/ ./
+ENV ASPNETCORE_URLS=http://+:8080
+EXPOSE 8080
+ENTRYPOINT ["dotnet", "Web.dll"]
