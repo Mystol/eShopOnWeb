@@ -59,7 +59,8 @@ gitleaks:
     name: zricethezav/gitleaks:latest
     entrypoint: [""]
   script:
-    - gitleaks detect --source . --verbose --gitleaks-ignore-path .gitleaksignore
+    # --no-git : scanne les fichiers actuels uniquement (pas l'historique du fork upstream)
+    - gitleaks detect --source . --verbose --no-git --gitleaks-ignore-path .gitleaksignore
   allow_failure: false
   rules:
     - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "develop"

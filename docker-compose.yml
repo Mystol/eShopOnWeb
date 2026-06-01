@@ -20,6 +20,6 @@ services:
     ports:
       - "1433:1433"
     environment:
-      - SA_PASSWORD=@someThingComplicated1234
+      - SA_PASSWORD=${DEV_SA_PASSWORD:-ChangeMe@Local1234}
       - ACCEPT_EULA=Y
 
