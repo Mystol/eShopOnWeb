@@ -1,8 +1,5 @@
 # Ignore false positives in test/dev files
 # Ces chemins contiennent des valeurs de test ou de placeholder
-src/Web/appsettings.Development.json
-tests/
-node_modules/
-.git/
-src/**/bin/
-src/**/obj/
+
+# Clé Data Protection ASP.NET Core expirée (2021-2022) issue du repo upstream open-source
+src/Web/key-768c1632-cf7b-41a9-bb7a-bff228ae8fba.xml:generic-api-key:2
