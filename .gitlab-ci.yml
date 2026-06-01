@@ -141,8 +141,8 @@ deploy-staging:
         export IMAGE_NAME=$IMAGE_NAME &&
         export IMAGE_TAG=$CI_COMMIT_SHA &&
         export SA_PASSWORD=$SA_PASSWORD_STG &&
-        docker-compose -f docker-compose.staging.yml pull &&
-        docker-compose -f docker-compose.staging.yml up -d
+        docker compose -f docker-compose.staging.yml pull &&
+        docker compose -f docker-compose.staging.yml up -d
       "
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
@@ -175,8 +175,8 @@ deploy-production:
         export IMAGE_NAME=$IMAGE_NAME &&
         export IMAGE_TAG=$CI_COMMIT_SHA &&
         export SA_PASSWORD=$SA_PASSWORD_PRD &&
-        docker-compose -f docker-compose.production.yml pull &&
-        docker-compose -f docker-compose.production.yml up -d
+        docker compose -f docker-compose.production.yml pull &&
+        docker compose -f docker-compose.production.yml up -d
       "
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
