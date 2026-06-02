@@ -128,14 +128,14 @@ deploy-staging:
     - mkdir -p ~/.ssh && chmod 700 ~/.ssh
     - echo "$SSH_PRIVATE_KEY" | base64 -d > ~/.ssh/id_ed25519
     - chmod 600 ~/.ssh/id_ed25519
-    - ssh-keyscan -H $VPS_HOST >> ~/.ssh/known_hosts
+    - ssh-keyscan -p 4722 -H $VPS_HOST >> ~/.ssh/known_hosts
   script:
     # Préparer le dossier sur le VPS
-    - ssh root@$VPS_HOST "mkdir -p /opt/securefintech/staging"
+    - ssh -p 4722 root@$VPS_HOST "mkdir -p /opt/securefintech/staging"
     # Copier le docker-compose de staging
-    - scp docker-compose.staging.yml root@$VPS_HOST:/opt/securefintech/staging/
+    - scp -P 4722 docker-compose.staging.yml root@$VPS_HOST:/opt/securefintech/staging/
     # Déployer la nouvelle image
-    - ssh root@$VPS_HOST "
+    - ssh -p 4722 root@$VPS_HOST "
         cd /opt/securefintech/staging &&
         docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY &&
         export IMAGE_NAME=$IMAGE_NAME &&
@@ -162,14 +162,14 @@ deploy-production:
     - mkdir -p ~/.ssh && chmod 700 ~/.ssh
     - echo "$SSH_PRIVATE_KEY" | base64 -d > ~/.ssh/id_ed25519
     - chmod 600 ~/.ssh/id_ed25519
-    - ssh-keyscan -H $VPS_HOST >> ~/.ssh/known_hosts
+    - ssh-keyscan -p 4722 -H $VPS_HOST >> ~/.ssh/known_hosts
   script:
     # Préparer le dossier sur le VPS
-    - ssh root@$VPS_HOST "mkdir -p /opt/securefintech/production"
+    - ssh -p 4722 root@$VPS_HOST "mkdir -p /opt/securefintech/production"
     # Copier le docker-compose de production
-    - scp docker-compose.production.yml root@$VPS_HOST:/opt/securefintech/production/
+    - scp -P 4722 docker-compose.production.yml root@$VPS_HOST:/opt/securefintech/production/
     # Déployer la nouvelle image
-    - ssh root@$VPS_HOST "
+    - ssh -p 4722 root@$VPS_HOST "
         cd /opt/securefintech/production &&
         docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY &&
         export IMAGE_NAME=$IMAGE_NAME &&
