@@ -1,217 +1,332 @@
-# Microsoft eShopOnWeb ASP.NET Core Reference Application
+# SecureFintech — Mission DevSecOps CI/CD
 
-This Microsoft reference application is now being maintained by [NimblePros](https://nimblepros.com/).
+> **Contexte de formation** : Industrialisation de la chaîne de livraison d'une startup Fintech fictive sur un VPS Ubuntu, en remplacement d'Azure (compte non disponible). Toutes les décisions d'adaptation sont documentées ci-dessous.
 
-If you're looking for the .NET Aspire eShop sample it's [here](https://github.com/dotnet/eShop). Microsoft also recommends the [Reliable Web App](https://learn.microsoft.com/azure/architecture/web-apps/guides/reliable-web-app/overview) patterns guidance for building web apps with enterprise app patterns.
+---
 
-Sample ASP.NET Core reference application, powered by Microsoft, demonstrating a single-process (monolithic) application architecture and deployment model. If you're new to .NET development, read the [Getting Started for Beginners](https://nimblepros.github.io/eShopOnWeb/getting-started-for-beginners.html) guide.
+## Table des matières
 
-A list of Frequently Asked Questions about this repository can be found [here](https://github.com/nimblepros/eShopOnWeb/wiki/Frequently-Asked-Questions).
+1. [Architecture de la solution](#1-architecture-de-la-solution)
+2. [Stack technique](#2-stack-technique)
+3. [Structure du repository](#3-structure-du-repository)
+4. [Compiler et exécuter en local](#4-compiler-et-exécuter-en-local)
+5. [Pipeline CI/CD GitLab](#5-pipeline-cicd-gitlab)
+6. [Infrastructure Docker (IaC)](#6-infrastructure-docker-iac)
+7. [Sécurité : Gitleaks + secrets](#7-sécurité--gitleaks--secrets)
+8. [Déploiement sur le VPS](#8-déploiement-sur-le-vps)
+9. [Monitoring et backups](#9-monitoring-et-backups)
+10. [Secrets — noms uniquement](#10-secrets--noms-uniquement)
+11. [Rétrospective personnelle](#11-rétrospective-personnelle)
 
-<!-- START doctoc generated TOC please keep comment here to allow auto update -->
-<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
-## Table of Contents
+---
 
-- [Overview Video](#overview-video)
-- [eBook](#ebook)
-- [Topics (eBook TOC)](#topics-ebook-toc)
-- [Running the sample using Azd template](#running-the-sample-using-azd-template)
-  - [Windows](#windows)
-  - [Linux/MacOS](#linuxmacos)
-- [Running the sample locally](#running-the-sample-locally)
-  - [Configuring the sample to use SQL Server](#configuring-the-sample-to-use-sql-server)
-- [Dev Containers for the eShopOnWeb repo](#dev-containers-for-the-eshoponweb-repo)
-  - [eShopOnWeb App Dev Container](#eshoponweb-app-dev-container)
-  - [eShopOnWeb Docs Dev Container](#eshoponweb-docs-dev-container)
-  - [Learn More about Dev Containers](#learn-more-about-dev-containers)
-- [Running the sample using Docker](#running-the-sample-using-docker)
-- [Getting the GitHub Single Sign-On Working](#getting-the-github-single-sign-on-working)
-- [Community Extensions](#community-extensions)
-
-<!-- END doctoc generated TOC please keep comment here to allow auto update -->
-
-## Overview Video
-
-[Steve "ardalis" Smith](https://twitter.com/ardalis) recorded [a live stream providing an overview of the eShopOnWeb reference app](https://www.youtube.com/watch?v=vRZ8ucGac8M&ab_channel=Ardalis) in October 2020.
-
-## eBook
-
-This reference application is meant to support the free .PDF download ebook: [Architecting Modern Web Applications with ASP.NET Core and Azure](https://aka.ms/webappebook), updated to **ASP.NET Core 8.0**. [Also available in ePub/mobi formats](https://dotnet.microsoft.com/learn/web/aspnet-architecture).
-
-You can also read the book in online pages at the .NET docs here:
-https://docs.microsoft.com/dotnet/architecture/modern-web-apps-azure/
-
-[<img src="https://dotnet.microsoft.com/blob-assets/images/e-books/aspnet.png" height="300" />](https://dotnet.microsoft.com/learn/web/aspnet-architecture)
-
-The **eShopOnWeb** sample is related to the [eShopOnContainers](https://github.com/dotnet/eShopOnContainers) sample application which, in that case, focuses on a microservices/containers-based application architecture. However, **eShopOnWeb** is much simpler in regards to its current functionality and focuses on traditional Web Application Development with a single deployment.
-
-The goal for this sample is to demonstrate some of the principles and patterns described in the [eBook](https://aka.ms/webappebook). It is not meant to be an eCommerce reference application, and as such it does not implement many features that would be obvious and/or essential to a real eCommerce application.
-
-> ### VERSIONS
-> #### The `main` branch is currently running ASP.NET Core 10.0.
-> #### Older versions are tagged.
-
-## Topics (eBook TOC)
-
-- Introduction
-- Characteristics of Modern Web Applications
-- Choosing Between Traditional Web Apps and SPAs
-- Architectural Principles
-- Common Web Application Architectures
-- Common Client Side Technologies
-- Developing ASP.NET Core MVC Apps
-- Working with Data in ASP.NET Core Apps
-- Testing ASP.NET Core MVC Apps
-- Development Process for Azure-Hosted ASP.NET Core Apps
-- Azure Hosting Recommendations for ASP.NET Core Web Apps
-
-## Running the sample using Azd template
-
-The store's home page should look like this:
-
-![eShopOnWeb home page screenshot](https://user-images.githubusercontent.com/782127/88414268-92d83a00-cdaa-11ea-9b4c-db67d95be039.png)
-
-The Azure Developer CLI (`azd`) is a developer-centric command-line interface (CLI) tool for creating Azure applications.
-
-You need to install it before running and deploying with Azure Developer CLI.
-
-### Windows
-
-```powershell
-powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"
-```
-
-### Linux/MacOS
+## 1. Architecture de la solution
 
 ```
-curl -fsSL https://aka.ms/install-azd.sh | bash
+Developer (git push)
+  └─► GitLab Repository
+        └─► GitLab CI/CD Pipeline
+              ├─ Stage 1 : build + test  (.NET 10, artefacts)
+              ├─ Stage 2 : security      (Gitleaks scan secrets)
+              ├─ Stage 3 : docker        (build image + push GitLab Registry)
+              ├─ Stage 4 : deploy-staging   (SSH → VPS, auto)
+              └─ Stage 5 : deploy-production (SSH → VPS, manuel ✋)
+
+VPS Ubuntu 24.04 (Hostinger)
+  ├─ Traefik v3 (reverse proxy + Let's Encrypt SSL)
+  ├─ Coolify v4 (orchestration déploiements)
+  ├─ eShopOnWeb Staging    → port 5106  (SQL Server dédié)
+  ├─ eShopOnWeb Production → port 5107  (SQL Server dédié)
+  ├─ Netdata               → monitoring système temps réel
+  └─ Uptime Kuma           → surveillance disponibilité services
 ```
 
-And you can also install with package managers, like winget, choco, and brew. For more details, you can follow the documentation: https://aka.ms/azure-dev/install.
+**Adaptation Azure → VPS** : La formation prévoyait Azure App Service + Azure Pipelines + Azure Key Vault. Faute de possibilité de créer un compte Azure, l'architecture a été adaptée :
 
-After logging in with the following command, you will be able to use the azd cli to quickly provision and deploy the application.
+| Prévu (Azure) | Réalisé (VPS) | Équivalence |
+|--------------|---------------|-------------|
+| Azure App Service | Docker Compose + Coolify | Hébergement application |
+| Azure Pipelines | GitLab CI/CD | Pipeline CI/CD |
+| Azure Key Vault | Variables GitLab CI (masked/protected) | Gestion des secrets |
+| Bicep IaC | docker-compose.*.yml | Infrastructure as Code |
+| Azure SQL | SQL Server 2022 (Docker) | Base de données |
 
-```
-azd auth login
-```
+---
 
-Then, execute the `azd init` command to initialize the environment.
-```
-azd init -t NimblePros/eShopOnWeb
-```
+## 2. Stack technique
 
-Run `azd up` to provision all the resources to Azure and deploy the code to those resources.
-```
-azd up
-```
+| Catégorie | Technologie | Version |
+|-----------|------------|---------|
+| Application | ASP.NET Core (eShopOnWeb) | .NET 10 |
+| Pipeline CI/CD | GitLab CI/CD | — |
+| Containerisation | Docker + Docker Compose v2 | Docker 29 |
+| Orchestration | Coolify | v4 |
+| Reverse proxy | Traefik | v3 |
+| Base de données | Microsoft SQL Server | 2022 |
+| Scan secrets | Gitleaks | latest |
+| Monitoring système | Netdata | latest |
+| Monitoring services | Uptime Kuma | 1 |
+| OS serveur | Ubuntu | 24.04 LTS |
+| SSH | Port 4722 (durci) | — |
 
-According to the prompt, enter an `env name`, and select `subscription` and `location`, these are the necessary parameters when you create resources. Wait a moment for the resource deployment to complete, click the web endpoint and you will see the home page.
+---
 
-**Notes:**
-1. Considering security, we store its related data (id, password) in the **Azure Key Vault** when we create the database, and obtain it from the Key Vault when we use it. This is different from directly deploying applications locally.
-2. The resource group name created in azure portal will be **rg-{env name}**.
-
-You can also run the sample directly locally (See below).
-
-## Running the sample locally
-Most of the site's functionality works with just the web application running. However, the site's Admin page relies on Blazor WebAssembly running in the browser, and it must communicate with the server using the site's PublicApi web application. You'll need to also run this project. You can configure Visual Studio to start multiple projects, or just go to the PublicApi folder in a terminal window and run `dotnet run` from there. After that from the Web folder you should run `dotnet run --launch-profile https`. Now you should be able to browse to `https://localhost:5001/`. The admin part in Blazor is accessible to `https://localhost:5001/admin`
-
-Note that if you use this approach, you'll need to stop the application manually in order to build the solution (otherwise you'll get file locking errors).
-
-After cloning or downloading the sample you must setup your database.
-To use the sample with a persistent database, you will need to run its Entity Framework Core migrations before you will be able to run the app.
-
-You can also run the samples in Docker (see below).
-
-### Configuring the sample to use SQL Server
-
-1. By default, the project uses a real database. If you want an in memory database, you can add in the `appsettings.json` file in the Web folder
-
-    ```json
-   {
-       "UseOnlyInMemoryDatabase": true
-   }
-    ```
-
-1. Ensure your connection strings in `appsettings.json` point to a local SQL Server instance.
-1. Ensure the tool EF was already installed. You can find some help [here](https://docs.microsoft.com/ef/core/miscellaneous/cli/dotnet)
-
-    ```
-    dotnet tool update --global dotnet-ef
-    ```
-
-1. Open a command prompt in the Web folder and execute the following commands:
-
-    ```
-    dotnet restore
-    dotnet tool restore
-    dotnet ef database update -c catalogcontext -p ../Infrastructure/Infrastructure.csproj -s Web.csproj
-    dotnet ef database update -c appidentitydbcontext -p ../Infrastructure/Infrastructure.csproj -s Web.csproj
-    ```
-
-    These commands will create two separate databases, one for the store's catalog data and shopping cart information, and one for the app's user credentials and identity data.
-
-1. Run the application.
-
-    The first time you run the application, it will seed both databases with data such that you should see products in the store, and you should be able to log in using the demouser@microsoft.com account.
-
-    Note: If you need to create migrations, you can use these commands:
-
-    ```
-    -- create migration (from Web folder CLI)
-    dotnet ef migrations add InitialModel --context catalogcontext -p ../Infrastructure/Infrastructure.csproj -s Web.csproj -o Data/Migrations
-
-    dotnet ef migrations add InitialIdentityModel --context appidentitydbcontext -p ../Infrastructure/Infrastructure.csproj -s Web.csproj -o Identity/Migrations
-    ```
-
-## Dev Containers for the eShopOnWeb repo
-
-We use dev containers to make it easier for you to run the eShopOnWeb application locally as well as our documentation.
-
-### eShopOnWeb App Dev Container
-
-This project includes a `.devcontainer` folder with a [dev container configuration](https://containers.dev/), which lets you use a container as a full-featured dev environment.
-
-You can use the dev container to build and run the app without needing to install any of its tools locally! You can work in GitHub Codespaces or the VS Code Dev Containers extension.
-
-Learn more about using the dev container in [eShopOnWeb's dev container readme](/.devcontainer/devcontainerreadme.md).
-
-### eShopOnWeb Docs Dev Container
-
-If you want to help maintain [the documentation](https://nimblepros.github.io/eShopOnWeb/), we have a [.devcontainer folder within the docs folder](/docs/.devcontainer). This allows us to see our documentation changes in a container running Ruby and the GitHub Pages environment.
-
-### Learn More about Dev Containers
-
-- [NimblePros YouTube: Run GitHub Pages Locally in a Dev Container](https://www.youtube.com/watch?v=JpLJi5JBmYM&t=5s)
-- [NimblePros Blog: Run GitHub Pages Locally in a Dev Container](https://blog.nimblepros.com/blogs/github-pages-with-dev-containers/)
-- [NimblePros Blog: Introduction to Dev Containers](https://blog.nimblepros.com/blogs/introduction-to-dev-containers/)
-- [NimblePros Webinar: Dev Containers Unwrapped!](https://www.youtube.com/watch?v=Wvetp2YkwPY)
-
-## Running the sample using Docker
-
-You can run the Web sample by running these commands from the root folder (where the .sln file is located):
+## 3. Structure du repository
 
 ```
-docker-compose build
-docker-compose up
+eShopOnWeb/
+├── .gitlab-ci.yml              # Pipeline CI/CD — 5 stages
+├── .gitleaksignore             # Faux positifs Gitleaks exclus
+├── Dockerfile.ci               # Image runtime (copie artefacts CI)
+├── docker-compose.staging.yml  # Infrastructure staging (IaC)
+├── docker-compose.production.yml # Infrastructure production (IaC)
+├── infra/
+│   ├── main.bicep              # Template Bicep (prévu Azure, adapté)
+│   └── main.parameters.json
+├── src/
+│   └── Web/
+│       ├── appsettings.json
+│       └── appsettings.Docker.json  # Config Docker (sans secrets)
+├── docs/
+│   └── screenshots/            # Captures d'écran des livrables
+└── tests/                      # Tests unitaires et d'intégration
 ```
 
-You should be able to make requests to localhost:5106 for the Web project, and localhost:5200 for the Public API project once these commands complete. If you have any problems, especially with login, try from a new guest or incognito browser instance.
+---
 
-You can also run the applications by using the instructions located in their `Dockerfile` file in the root of each project. Again, run these commands from the root of the solution (where the .sln file is located).
+## 4. Compiler et exécuter en local
 
-## Getting the GitHub Single Sign-On Working
+### Prérequis
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+- [Git](https://git-scm.com/)
 
-We include GitHub as our external provider for single sign-on.
+### Cloner et compiler
 
-To get it running locally, you'll want to register an application in GitHub and store values in user secrets for the client ID and client secret.
+```bash
+git clone https://github.com/Mystol/eShopOnWeb.git
+cd eShopOnWeb
+dotnet restore eShopOnWeb.sln
+dotnet build eShopOnWeb.sln -c Release
+```
 
-We explain the code in detail in our course on [ASP.NET Identity in Action: Implementing Individual Accounts](https://academy.nimblepros.com/p/applying-identity-to-asp-net).
+### Lancer les tests
 
-## Community Extensions
+```bash
+dotnet test eShopOnWeb.sln -c Release --logger "trx;LogFileName=results.trx" --results-directory ./test-results
+```
 
-We have some great contributions from the community, and while these aren't maintained by Microsoft we still want to highlight them.
+### Lancer avec Docker Compose (local)
 
-[eShopOnWeb VB.NET](https://github.com/VBAndCs/eShopOnWeb_VB.NET) by Mohammad Hamdy Ghanem
+```bash
+# Copier et adapter le fichier d'environnement
+cp docker-compose.staging.yml docker-compose.local.yml
 
-[FShopOnWeb](https://github.com/NitroDevs/FShopOnWeb) An F# take on eShopOnWeb by Sean G. Wright and Kyle McMaster
+# Démarrer (SQL Server + application)
+docker compose -f docker-compose.local.yml up -d
+
+# Accéder à l'application
+# http://localhost:5106
+```
+
+---
+
+## 5. Pipeline CI/CD GitLab
+
+Fichier : [`.gitlab-ci.yml`](.gitlab-ci.yml)
+
+### Stages et déclencheurs
+
+```
+push sur main ou develop
+    │
+    ├─ [build]     dotnet restore → build Release → publish → artefact
+    ├─ [test]      dotnet test → rapport .trx (conservé 1 semaine)
+    ├─ [security]  Gitleaks detect --no-git --verbose
+    ├─ [docker]    docker build (Dockerfile.ci) → push registry GitLab  ← main only
+    ├─ [deploy-staging]    SSH → VPS → docker compose pull & up          ← main only
+    └─ [deploy-production] SSH → VPS → approbation MANUELLE requise      ← main only
+```
+
+### Variables GitLab CI requises
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `CI_REGISTRY_USER` | Auto GitLab | Login registry |
+| `CI_REGISTRY_PASSWORD` | Auto GitLab | Token registry |
+| `CI_REGISTRY` | Auto GitLab | URL registry |
+| `VPS_HOST` | Custom masked | IP du VPS |
+| `SSH_PRIVATE_KEY` | Custom masked | Clé privée ED25519 (base64) |
+| `SA_PASSWORD_STG` | Custom masked | Mot de passe SA SQL staging |
+| `SA_PASSWORD_PRD` | Custom masked | Mot de passe SA SQL production |
+
+> La clé SSH est encodée en base64 pour respecter la contrainte de masquage GitLab (pas de saut de ligne dans les variables masquées).
+
+### Dockerfile CI optimisé
+
+Le `Dockerfile.ci` ne fait pas `dotnet restore` — les binaires sont déjà compilés par le stage `build` et passés via artefact. Cela évite les timeouts NuGet dans Docker-in-Docker (problème rencontré avec DinD et les registries NuGet lents).
+
+```dockerfile
+FROM mcr.microsoft.com/dotnet/aspnet:10.0
+WORKDIR /app
+COPY ci-publish/ ./
+ENV ASPNETCORE_URLS=http://+:8080
+EXPOSE 8080
+ENTRYPOINT ["dotnet", "Web.dll"]
+```
+
+---
+
+## 6. Infrastructure Docker (IaC)
+
+Les fichiers `docker-compose.staging.yml` et `docker-compose.production.yml` jouent le rôle de l'IaC (équivalent Bicep/Terraform pour le VPS).
+
+### Environnements
+
+| Environnement | Port app | Réseau Docker | Base SQL |
+|--------------|----------|---------------|----------|
+| Staging | 5106 | securefintech-stg | sqlserver-stg |
+| Production | 5107 | securefintech-prd | sqlserver-prd |
+
+### Déploiement manuel (hors pipeline)
+
+```bash
+# Sur le VPS, depuis /opt/securefintech/staging/
+export IMAGE_NAME=registry.gitlab.com/mystol/eshoponweb/eshopweb
+export IMAGE_TAG=<sha-commit>
+export SA_PASSWORD=<depuis gestionnaire de secrets>
+
+docker compose -f docker-compose.staging.yml pull
+docker compose -f docker-compose.staging.yml up -d
+```
+
+---
+
+## 7. Sécurité : Gitleaks + secrets
+
+### Gitleaks (scan de secrets)
+
+- Image : `zricethezav/gitleaks:latest`
+- Mode : `--no-git` (scan des fichiers courants uniquement, pas l'historique du fork upstream)
+- Configuration : [`.gitleaksignore`](.gitleaksignore)
+- `allow_failure: false` — le pipeline échoue si un secret est détecté
+
+**Faux positif exclu** : Une clé ASP.NET Core Data Protection expirée (2021), présente dans le repo upstream NimblePros, est exclue via `.gitleaksignore`. Cette clé ne présente aucun risque (expirée, publique sur GitHub).
+
+### Durcissement VPS
+
+- SSH sur port non standard (4722), authentification par clé uniquement
+- UFW activé + règles DOCKER-USER pour bloquer l'exposition directe des ports Docker
+- fail2ban configuré (3 tentatives → ban 24h)
+- Docker : `no-new-privileges`, `icc=false`, rotation des logs
+
+---
+
+## 8. Déploiement sur le VPS
+
+### Accès
+
+```bash
+ssh -p 4722 root@<VPS_IP>
+```
+
+### URLs de l'application
+
+| Environnement | URL |
+|--------------|-----|
+| Staging | `http://<VPS_IP>:5106` |
+| Production | `http://<VPS_IP>:5107` |
+
+### Commandes utiles sur le VPS
+
+```bash
+# Voir tous les conteneurs
+docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
+
+# Logs de l'application staging
+docker logs staging-eshopwebmvc-1 -f
+
+# Logs de l'application production
+docker logs production-eshopwebmvc-1 -f
+
+# Lancer un backup manuel
+/opt/securefintech/scripts/backup.sh
+```
+
+---
+
+## 9. Monitoring et backups
+
+### Monitoring
+
+| Outil | Accès | Rôle |
+|-------|-------|------|
+| **Netdata** | `http://localhost:19999` (VPS) | CPU, RAM, disque, réseau, Docker |
+| **Uptime Kuma** | `http://<VPS_IP>:3001` | Disponibilité des services (UP/DOWN) |
+| **Coolify** | Interface web | Logs conteneurs, déploiements |
+
+### Backups automatiques
+
+- **Script** : `/opt/securefintech/scripts/backup.sh`
+- **Cron** : tous les jours à **02h00**
+- **Rétention** : 7 jours glissants
+- **Contenu** : dumps SQL Server (CatalogDb + IdentityDb) + archives volumes Docker
+- **Rapport** : email automatique après chaque run (succès ou échec)
+
+---
+
+## 10. Secrets — noms uniquement
+
+> Les valeurs ne sont jamais stockées dans le code source. Elles sont injectées via les variables CI/CD GitLab (masked + protected).
+
+| Nom de la variable | Usage |
+|-------------------|-------|
+| `VPS_HOST` | Adresse IP du VPS de déploiement |
+| `SSH_PRIVATE_KEY` | Clé privée SSH (base64) pour l'accès au VPS depuis le pipeline |
+| `SA_PASSWORD_STG` | Mot de passe administrateur SQL Server — environnement staging |
+| `SA_PASSWORD_PRD` | Mot de passe administrateur SQL Server — environnement production |
+
+Les chaînes de connexion SQL sont construites dans les `docker-compose.*.yml` à partir de ces variables, sans jamais être écrites en clair dans le code.
+
+---
+
+## 11. Rétrospective personnelle
+
+### Ce qui a bien fonctionné
+
+- **La démarche IaC** : avoir tout le déploiement dans des fichiers YAML versionnés (`.gitlab-ci.yml`, `docker-compose.*.yml`) rend chaque changement traçable et reproductible. Recréer l'environnement depuis zéro ne prend que quelques minutes.
+- **La séparation staging / production** : deux environnements isolés (réseau Docker distinct, SQL Server distinct, port distinct) avec gate d'approbation manuelle en production. C'est exactement ce qu'on ferait en entreprise.
+- **Gitleaks en gate bloquant** : avoir `allow_failure: false` force à traiter les problèmes de sécurité avant tout merge. La configuration `--no-git` a été une décision intelligente pour éviter les faux positifs de l'historique du fork upstream.
+
+### Ce qui a bloqué (et comment ça a été résolu)
+
+| Problème | Cause | Solution |
+|----------|-------|----------|
+| **NuGet timeout dans Docker-in-Docker** | Le réseau DinD est lent, `dotnet restore` dépassait 20 min | Dockerfile.ci qui copie les binaires déjà compilés — zéro `dotnet restore` dans Docker |
+| **Variables GitLab masquées refusées** | Les chaînes de connexion SQL contiennent des espaces (`User Id`, `Initial Catalog`) | Utilisation des alias sans espaces (`uid=`, `Database=`) |
+| **SSH_PRIVATE_KEY avec sauts de ligne** | GitLab ne masque pas les variables multi-lignes | Encodage base64 de la clé + décodage dans le pipeline |
+| **`docker-compose` non trouvé sur le VPS** | Docker 29 intègre Compose v2 (`docker compose`, sans tiret) | Suppression du tiret dans toutes les commandes |
+| **Port SSH 4722 non pris en compte** | Ubuntu 24.04 utilise `ssh.socket` (systemd socket activation) qui override `sshd_config` | Création de `/etc/systemd/system/ssh.socket.d/override.conf` |
+| **Coolify "Not reachable"** | Coolify stockait le port SSH 22 en base — non mis à jour après le durcissement | Mise à jour directe en base PostgreSQL Coolify |
+| **Gitleaks détecte 5 secrets** | Clés Data Protection ASP.NET Core dans l'historique du repo upstream | Utilisation de `--no-git` + `.gitleaksignore` pour les faux positifs |
+
+### Ce que j'ai appris
+
+- Un pipeline CI/CD n'est pas qu'une suite de commandes — c'est un contrat entre les développeurs et l'infrastructure. Chaque stage a une responsabilité unique et doit être idempotent.
+- La sécurité se construit par couches : secrets masqués dans CI, pas de mot de passe dans le code, SSH durci, pare-feu, fail2ban. Aucune couche seule ne suffit.
+- Docker Compose comme IaC est sous-estimé : la reproductibilité d'un environnement complet en un seul fichier YAML est extrêmement puissante pour des projets sans budget cloud.
+- Les problèmes les plus chronophages ne sont pas techniques mais de configuration : permissions, ports, encodage des variables. La résolution méthodique (lire les logs, tester par étapes) est plus efficace que de chercher une solution miracle.
+
+---
+
+## Liens
+
+- **Repository GitLab** : https://gitlab.com/Mystol/eshoponweb
+- **Repository GitHub** (mirror) : https://github.com/Mystol/eShopOnWeb
+- **Application Staging** : `http://<VPS_IP>:5106`
+- **Application Production** : `http://<VPS_IP>:5107`
+- **Coolify Dashboard** : https://backstage-coolify-ops.lacroixdubenin.bj
+
+---
+
+*Mission réalisée dans le cadre de la formation AZ-400 DevOps — SecureFintech (projet fictif)*
