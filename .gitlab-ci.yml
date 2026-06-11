@@ -88,6 +88,7 @@ sonarcloud:
     - dotnet tool install --global dotnet-sonarscanner
     - export PATH="$PATH:/root/.dotnet/tools"
   script:
+    - dotnet restore $SOLUTION_FILE
     - dotnet sonarscanner begin
         /k:"$SONAR_PROJECT_KEY"
         /o:"$SONAR_ORG"
