@@ -43,13 +43,17 @@ VPS Ubuntu 24.04 (Hostinger)
 
 **Adaptation Azure → VPS** : La formation prévoyait Azure App Service + Azure Pipelines + Azure Key Vault. Faute de possibilité de créer un compte Azure, l'architecture a été adaptée :
 
-| Prévu (Azure) | Réalisé (VPS) | Équivalence |
-|--------------|---------------|-------------|
-| Azure App Service | Docker Compose + Coolify | Hébergement application |
-| Azure Pipelines | GitLab CI/CD | Pipeline CI/CD |
+| Prévu (Azure) | Réalisé (VPS) | Équivalence fonctionnelle |
+|--------------|---------------|--------------------------|
+| Azure App Service (Staging + Prod) | Docker Compose + Coolify | Hébergement containerisé |
+| Azure Pipelines | GitLab CI/CD (.gitlab-ci.yml) | Pipeline CI/CD 5 stages |
 | Azure Key Vault | Variables GitLab CI (masked/protected) | Gestion des secrets |
-| Bicep IaC | docker-compose.*.yml | Infrastructure as Code |
-| Azure SQL | SQL Server 2022 (Docker) | Base de données |
+| Bicep IaC | docker-compose.staging.yml / production.yml | Infrastructure déclarative |
+| Azure SQL | SQL Server 2022 (Docker) | Base de données relationnelle |
+| SonarCloud | SonarCloud (identique — indépendant d'Azure) | Analyse qualité SAST |
+| Gitleaks | Gitleaks (identique) | Scan de secrets |
+
+> Le template Bicep complet est présent dans [`infra/main.bicep`](infra/main.bicep) et décrit exactement l'architecture Azure cible. Il n'a pas été déployé faute de souscription Azure.
 
 ---
 
@@ -143,6 +147,7 @@ push sur main ou develop
     ├─ [build]     dotnet restore → build Release → publish → artefact
     ├─ [test]      dotnet test → rapport .trx (conservé 1 semaine)
     ├─ [security]  Gitleaks detect --no-git --verbose
+    │              SonarCloud analyse qualité + Quality Gate
     ├─ [docker]    docker build (Dockerfile.ci) → push registry GitLab  ← main only
     ├─ [deploy-staging]    SSH → VPS → docker compose pull & up          ← main only
     └─ [deploy-production] SSH → VPS → approbation MANUELLE requise      ← main only
@@ -159,6 +164,9 @@ push sur main ou develop
 | `SSH_PRIVATE_KEY` | Custom masked | Clé privée ED25519 (base64) |
 | `SA_PASSWORD_STG` | Custom masked | Mot de passe SA SQL staging |
 | `SA_PASSWORD_PRD` | Custom masked | Mot de passe SA SQL production |
+| `SONAR_TOKEN` | Custom masked | Token SonarCloud (généré sur sonarcloud.io) |
+| `SONAR_PROJECT_KEY` | Custom | Clé projet SonarCloud (ex: `Mystol_eShopOnWeb`) |
+| `SONAR_ORG` | Custom | Organisation SonarCloud (ex: `mystol`) |
 
 > La clé SSH est encodée en base64 pour respecter la contrainte de masquage GitLab (pas de saut de ligne dans les variables masquées).
 
@@ -177,9 +185,47 @@ ENTRYPOINT ["dotnet", "Web.dll"]
 
 ---
 
-## 6. Infrastructure Docker (IaC)
+## 6. Infrastructure as Code (IaC)
 
-Les fichiers `docker-compose.staging.yml` et `docker-compose.production.yml` jouent le rôle de l'IaC (équivalent Bicep/Terraform pour le VPS).
+### Bicep Azure (architecture cible du brief)
+
+Le dossier [`infra/`](infra/) contient le template Bicep complet décrivant les ressources Azure prévues par le brief.
+
+```
+infra/
+├── main.bicep              # Template principal (6 ressources Azure)
+├── main.parameters.json    # Paramètres de déploiement
+├── abbreviations.json      # Préfixes CAF
+└── core/                   # Modules réutilisables
+    ├── host/               # App Service + App Service Plan
+    ├── database/sqlserver/ # Azure SQL Server + Database
+    └── security/           # Key Vault + Access Policies
+```
+
+**Commande de déploiement Azure :**
+```bash
+az deployment sub create \
+  --location westeurope \
+  --template-file infra/main.bicep \
+  --parameters infra/main.parameters.json
+```
+
+**6 ressources provisionnées (convention CAF) :**
+
+| Ressource | Nom (convention CAF) | SKU | Rôle |
+|-----------|---------------------|-----|------|
+| Resource Group | `rg-securefintech-dev-weu` | — | Conteneur logique |
+| App Service Plan | `plan-securefintech-dev` | F1 (gratuit) | Plan d'hébergement |
+| App Service Staging | `app-securefintech-dev-stg` | .NET 10 | Pré-production |
+| App Service Production | `app-securefintech-dev-prd` | .NET 10 | Production |
+| Azure SQL Server + DBs | `sql-securefintech-dev` | Basic | CatalogDb + IdentityDb |
+| Azure Key Vault | `kv-securefintech-dev-sf26` | Standard | Secrets centralisés |
+
+> **Adaptation réalisée** : faute de compte Azure disponible, ce template n'a pas pu être déployé. Les `docker-compose.*.yml` ci-dessous jouent le même rôle sur VPS.
+
+### Infrastructure Docker (réalisée sur VPS)
+
+Les fichiers `docker-compose.staging.yml` et `docker-compose.production.yml` sont l'équivalent opérationnel du Bicep pour l'environnement VPS.
 
 ### Environnements
 
@@ -202,7 +248,14 @@ docker compose -f docker-compose.staging.yml up -d
 
 ---
 
-## 7. Sécurité : Gitleaks + secrets
+## 7. Sécurité : SonarCloud + Gitleaks + secrets
+
+### SonarCloud (qualité de code)
+
+- Analyse statique SAST à chaque push sur `main`
+- Quality Gate configurée pour bloquer sur les **Bugs** et **Vulnerabilities** (Code Smells tolérés — dette technique existante du fork upstream NimblePros)
+- Variables requises : `SONAR_TOKEN`, `SONAR_PROJECT_KEY`, `SONAR_ORG` (masked dans GitLab CI)
+- Dashboard : https://sonarcloud.io/project/overview?id=Mystol_eShopOnWeb
 
 ### Gitleaks (scan de secrets)
 

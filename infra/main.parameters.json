@@ -2,20 +2,28 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "environmentName": {
-      "value": "${AZURE_ENV_NAME}"
+    "projectName": {
+      "value": "securefintech"
+    },
+    "environment": {
+      "value": "dev"
     },
     "location": {
-      "value": "${AZURE_LOCATION}"
+      "value": "westeurope"
     },
-    "principalId": {
-      "value": "${AZURE_PRINCIPAL_ID}"
+    "uniqueSuffix": {
+      "value": "sf26"
     },
     "sqlAdminPassword": {
-      "value": "$(secretOrRandomPassword ${AZURE_KEY_VAULT_NAME} sqlAdminPassword)"
+      "reference": {
+        "keyVault": {
+          "id": "/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/rg-securefintech-dev-weu/providers/Microsoft.KeyVault/vaults/kv-securefintech-dev-sf26"
+        },
+        "secretName": "sqlAdminPassword"
+      }
     },
-    "appUserPassword": {
-      "value": "$(secretOrRandomPassword ${AZURE_KEY_VAULT_NAME} appUserPassword)"
+    "principalId": {
+      "value": "<YOUR_AZURE_AD_OBJECT_ID>"
     }
   }
 }

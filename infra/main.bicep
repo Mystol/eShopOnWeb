@@ -1,144 +1,203 @@
+// ============================================================
+// SecureFintech — Infrastructure as Code (Bicep)
+// Convention de nommage : CAF Microsoft (Cloud Adoption Framework)
+// Format : <préfixe>-<projet>-<env>-<suffixe>
+//
+// Déploiement :
+//   az deployment sub create \
+//     --location westeurope \
+//     --template-file infra/main.bicep \
+//     --parameters infra/main.parameters.json
+//
+// Note d'adaptation : Ce template décrit l'architecture Azure
+// cible du brief. Dans la réalisation concrète, Azure a été
+// remplacé par un VPS Ubuntu 24.04 (Hostinger) faute de compte
+// Azure disponible. Les docker-compose.*.yml jouent le rôle de
+// ce Bicep dans l'environnement VPS. Voir README.md section 1.
+// ============================================================
+
 targetScope = 'subscription'
 
-@minLength(1)
-@maxLength(64)
-@description('Name of the the environment which is used to generate a short unique hash used in all resources.')
-param environmentName string
+// ── Paramètres ──────────────────────────────────────────────
 
-@minLength(1)
-@description('Primary location for all resources')
-param location string
+@description('Nom du projet (utilisé dans toutes les ressources)')
+param projectName string = 'securefintech'
 
-// Optional parameters to override the default azd resource naming conventions. Update the main.parameters.json file to provide values. e.g.,:
-// "resourceGroupName": {
-//      "value": "myGroupName"
-// }
-param resourceGroupName string = ''
-param webServiceName string = ''
-param catalogDatabaseName string = 'catalogDatabase'
-param catalogDatabaseServerName string = ''
-param identityDatabaseName string = 'identityDatabase'
-param identityDatabaseServerName string = ''
-param appServicePlanName string = ''
-param keyVaultName string = ''
+@description('Environnement : dev | staging | prod')
+@allowed(['dev', 'staging', 'prod'])
+param environment string = 'dev'
 
-@description('Id of the user or app to assign application roles')
-param principalId string = ''
+@description('Région Azure cible')
+param location string = 'westeurope'
 
+@description('Suffixe court unique mondial pour Key Vault (3-6 caractères)')
+@minLength(3)
+@maxLength(6)
+param uniqueSuffix string
+
+@description('Mot de passe administrateur SQL Server (minimum 12 caractères, majuscule + chiffre + spécial)')
 @secure()
-@description('SQL Server administrator password')
 param sqlAdminPassword string
 
-@secure()
-@description('Application user password')
-param appUserPassword string
+@description('ID Azure AD du principal autorisé à lire les secrets Key Vault (votre compte ou service principal CI)')
+param principalId string = ''
 
-var abbrs = loadJsonContent('./abbreviations.json')
-var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
-var tags = { 'azd-env-name': environmentName }
+// ── Convention de nommage CAF ─────────────────────────────────
+// Région : weu = West Europe
+var region = 'weu'
+var rgName            = 'rg-${projectName}-${environment}-${region}'
+var planName          = 'plan-${projectName}-${environment}'
+var appStagingName    = 'app-${projectName}-${environment}-stg'
+var appProductionName = 'app-${projectName}-${environment}-prd'
+var sqlServerName     = 'sql-${projectName}-${environment}'
+var catalogDbName     = 'sqldb-${projectName}-catalog-${environment}'
+var identityDbName    = 'sqldb-${projectName}-identity-${environment}'
+// Key Vault : nom unique mondial, suffixe aléatoire requis
+var kvName            = 'kv-${projectName}-${environment}-${uniqueSuffix}'
 
-// Organize resources in a resource group
-resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
-  name: !empty(resourceGroupName) ? resourceGroupName : '${abbrs.resourcesResourceGroups}${environmentName}'
+var tags = {
+  project: projectName
+  environment: environment
+  managedBy: 'bicep'
+}
+
+// ── Resource Group ───────────────────────────────────────────
+resource rg 'Microsoft.Resources/resourceGroups@2023-07-01' = {
+  name: rgName
   location: location
   tags: tags
 }
 
-// The application frontend
-module web './core/host/appservice.bicep' = {
-  name: 'web'
+// ── App Service Plan (F1 gratuit) ────────────────────────────
+module appServicePlan './core/host/appserviceplan.bicep' = {
+  name: 'deploy-plan'
   scope: rg
   params: {
-    name: !empty(webServiceName) ? webServiceName : '${abbrs.webSitesAppService}web-${resourceToken}'
+    name: planName
     location: location
-    appServicePlanId: appServicePlan.outputs.id
-    keyVaultName: keyVault.outputs.name
-    runtimeName: 'dotnetcore'
-    runtimeVersion: '9.0'
-    tags: union(tags, { 'azd-service-name': 'web' })
-    appSettings: {
-      AZURE_SQL_CATALOG_CONNECTION_STRING_KEY: 'AZURE-SQL-CATALOG-CONNECTION-STRING'
-      AZURE_SQL_IDENTITY_CONNECTION_STRING_KEY: 'AZURE-SQL-IDENTITY-CONNECTION-STRING'
-      AZURE_KEY_VAULT_ENDPOINT: keyVault.outputs.endpoint
+    tags: tags
+    sku: {
+      name: 'F1'   // Gratuit — passer à B1 pour la production réelle
+      tier: 'Free'
     }
   }
 }
 
-module apiKeyVaultAccess './core/security/keyvault-access.bicep' = {
-  name: 'api-keyvault-access'
+// ── App Service Staging ──────────────────────────────────────
+module appStaging './core/host/appservice.bicep' = {
+  name: 'deploy-app-staging'
   scope: rg
   params: {
-    keyVaultName: keyVault.outputs.name
-    principalId: web.outputs.identityPrincipalId
+    name: appStagingName
+    location: location
+    tags: union(tags, { slot: 'staging' })
+    appServicePlanId: appServicePlan.outputs.id
+    keyVaultName: kvName
+    runtimeName: 'dotnetcore'
+    runtimeVersion: '10.0'
+    appSettings: {
+      ASPNETCORE_ENVIRONMENT: 'Staging'
+      AZURE_SQL_CATALOG_CONNECTION_STRING_KEY: 'CatalogConnection'
+      AZURE_SQL_IDENTITY_CONNECTION_STRING_KEY: 'IdentityConnection'
+    }
   }
 }
 
-// The application database: Catalog
+// ── App Service Production ───────────────────────────────────
+module appProduction './core/host/appservice.bicep' = {
+  name: 'deploy-app-production'
+  scope: rg
+  params: {
+    name: appProductionName
+    location: location
+    tags: union(tags, { slot: 'production' })
+    appServicePlanId: appServicePlan.outputs.id
+    keyVaultName: kvName
+    runtimeName: 'dotnetcore'
+    runtimeVersion: '10.0'
+    appSettings: {
+      ASPNETCORE_ENVIRONMENT: 'Production'
+      AZURE_SQL_CATALOG_CONNECTION_STRING_KEY: 'CatalogConnection'
+      AZURE_SQL_IDENTITY_CONNECTION_STRING_KEY: 'IdentityConnection'
+    }
+  }
+}
+
+// ── Azure SQL Server + Bases de données ──────────────────────
+// CatalogDb (catalogue produits)
 module catalogDb './core/database/sqlserver/sqlserver.bicep' = {
-  name: 'sql-catalog'
+  name: 'deploy-sql-catalog'
   scope: rg
   params: {
-    name: !empty(catalogDatabaseServerName) ? catalogDatabaseServerName : '${abbrs.sqlServers}catalog-${resourceToken}'
-    databaseName: catalogDatabaseName
+    name: sqlServerName
+    databaseName: catalogDbName
     location: location
     tags: tags
     sqlAdminPassword: sqlAdminPassword
-    appUserPassword: appUserPassword
-    keyVaultName: keyVault.outputs.name
-    connectionStringKey: 'AZURE-SQL-CATALOG-CONNECTION-STRING'
+    appUserPassword: sqlAdminPassword
+    keyVaultName: kvName
+    connectionStringKey: 'CatalogConnection'
   }
 }
 
-// The application database: Identity
+// IdentityDb (authentification ASP.NET Core Identity)
 module identityDb './core/database/sqlserver/sqlserver.bicep' = {
-  name: 'sql-identity'
+  name: 'deploy-sql-identity'
   scope: rg
+  dependsOn: [catalogDb]
   params: {
-    name: !empty(identityDatabaseServerName) ? identityDatabaseServerName : '${abbrs.sqlServers}identity-${resourceToken}'
-    databaseName: identityDatabaseName
+    name: sqlServerName
+    databaseName: identityDbName
     location: location
     tags: tags
     sqlAdminPassword: sqlAdminPassword
-    appUserPassword: appUserPassword
-    keyVaultName: keyVault.outputs.name
-    connectionStringKey: 'AZURE-SQL-IDENTITY-CONNECTION-STRING'
+    appUserPassword: sqlAdminPassword
+    keyVaultName: kvName
+    connectionStringKey: 'IdentityConnection'
   }
 }
 
-// Store secrets in a keyvault
+// ── Azure Key Vault ───────────────────────────────────────────
+// Les secrets CatalogConnection et IdentityConnection sont stockés ici
+// et injectés dans les App Services via des références Key Vault :
+//   @Microsoft.KeyVault(SecretUri=https://kv-...vault.azure.net/secrets/CatalogConnection/)
 module keyVault './core/security/keyvault.bicep' = {
-  name: 'keyvault'
+  name: 'deploy-keyvault'
   scope: rg
   params: {
-    name: !empty(keyVaultName) ? keyVaultName : '${abbrs.keyVaultVaults}${resourceToken}'
+    name: kvName
     location: location
     tags: tags
     principalId: principalId
   }
 }
 
-// Create an App Service Plan to group applications under the same payment plan and SKU
-module appServicePlan './core/host/appserviceplan.bicep' = {
-  name: 'appserviceplan'
+// Accès Key Vault pour l'identité managée de l'App Service Staging
+module kvAccessStaging './core/security/keyvault-access.bicep' = {
+  name: 'kv-access-staging'
   scope: rg
   params: {
-    name: !empty(appServicePlanName) ? appServicePlanName : '${abbrs.webServerFarms}${resourceToken}'
-    location: location
-    tags: tags
-    sku: {
-      name: 'B1'
-    }
+    keyVaultName: kvName
+    principalId: appStaging.outputs.identityPrincipalId
   }
 }
 
-// Data outputs
-output AZURE_SQL_CATALOG_CONNECTION_STRING_KEY string = catalogDb.outputs.connectionStringKey
-output AZURE_SQL_IDENTITY_CONNECTION_STRING_KEY string = identityDb.outputs.connectionStringKey
-output AZURE_SQL_CATALOG_DATABASE_NAME string = catalogDb.outputs.databaseName
-output AZURE_SQL_IDENTITY_DATABASE_NAME string = identityDb.outputs.databaseName
+// Accès Key Vault pour l'identité managée de l'App Service Production
+module kvAccessProduction './core/security/keyvault-access.bicep' = {
+  name: 'kv-access-production'
+  scope: rg
+  params: {
+    keyVaultName: kvName
+    principalId: appProduction.outputs.identityPrincipalId
+  }
+}
 
-// App outputs
+// ── Outputs ──────────────────────────────────────────────────
+output resourceGroupName string = rg.name
+output appStagingUrl string = 'https://${appStagingName}.azurewebsites.net'
+output appProductionUrl string = 'https://${appProductionName}.azurewebsites.net'
+output keyVaultUri string = 'https://${kvName}.vault.azure.net/'
+output sqlServerFqdn string = '${sqlServerName}.database.windows.net'
+output AZURE_KEY_VAULT_NAME string = kvName
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
-output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.endpoint
-output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name

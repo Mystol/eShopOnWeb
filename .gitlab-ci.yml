@@ -68,29 +68,38 @@ gitleaks:
 
 # ────────────────────────────────────────────
 # STAGE 2 — QUALITÉ CODE (SonarCloud)
-# Décommenter quand le token SonarCloud est configuré
+# Variables GitLab CI requises :
+#   SONAR_TOKEN       → token généré sur sonarcloud.io (masked)
+#   SONAR_PROJECT_KEY → ex: Mystol_eShopOnWeb  (visible dans SonarCloud)
+#   SONAR_ORG         → ex: mystol             (slug de l'organisation SonarCloud)
 # ────────────────────────────────────────────
-# sonarcloud:
-#   stage: security
-#   image: mcr.microsoft.com/dotnet/sdk:10.0
-#   variables:
-#     SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"
-#     GIT_DEPTH: "0"
-#   before_script:
-#     - apt-get update && apt-get install -y default-jre
-#     - dotnet tool install --global dotnet-sonarscanner
-#     - export PATH="$PATH:/root/.dotnet/tools"
-#   script:
-#     - dotnet sonarscanner begin
-#         /k:"$SONAR_PROJECT_KEY"
-#         /o:"$SONAR_ORG"
-#         /d:sonar.login="$SONAR_TOKEN"
-#         /d:sonar.host.url="https://sonarcloud.io"
-#         /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml"
-#     - dotnet build $SOLUTION_FILE -c Release
-#     - dotnet sonarscanner end /d:sonar.login="$SONAR_TOKEN"
-#   rules:
-#     - if: $CI_COMMIT_BRANCH == "main"
+sonarcloud:
+  stage: security
+  image: mcr.microsoft.com/dotnet/sdk:10.0
+  variables:
+    SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"
+    GIT_DEPTH: "0"
+  cache:
+    key: sonar-cache
+    paths:
+      - .sonar/cache
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq default-jre-headless
+    - dotnet tool install --global dotnet-sonarscanner
+    - export PATH="$PATH:/root/.dotnet/tools"
+  script:
+    - dotnet sonarscanner begin
+        /k:"$SONAR_PROJECT_KEY"
+        /o:"$SONAR_ORG"
+        /d:sonar.token="$SONAR_TOKEN"
+        /d:sonar.host.url="https://sonarcloud.io"
+        /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml"
+        /d:sonar.coverage.exclusions="**/Migrations/**,**/wwwroot/**"
+    - dotnet build $SOLUTION_FILE -c Release --no-restore
+    - dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
+  allow_failure: false
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
 
 # ────────────────────────────────────────────
 # STAGE 3 — BUILD IMAGE DOCKER + PUSH REGISTRY
